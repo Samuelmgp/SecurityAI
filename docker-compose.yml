@@ -1,0 +1,74 @@
+services:
+
+  # ── Ollama inference server ───────────────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    # ── NVIDIA GPU support (uncomment if available) ───────────────────────
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  # ── One-shot: pull the model on first run (skipped on subsequent starts) ─
+  ollama-init:
+    image: ollama/ollama:latest
+    entrypoint: ["ollama", "pull", "${OLLAMA_MODEL:-phi3.5:mini}"]
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: "no"
+
+  # ── FastAPI backend ───────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./book_data:/app/book_data:ro   # textbook PDFs (read-only)
+      - chroma_data:/app/data/chroma    # persistent vector DB
+    environment:
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-phi3.5:mini}
+      BOOKS_DIR: /app/book_data
+      CHROMA_DIR: /app/data/chroma
+      FRONTEND_ORIGIN: http://localhost
+    depends_on:
+      ollama:
+        condition: service_healthy
+      ollama-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  # ── React frontend (nginx) ────────────────────────────────────────────────
+  frontend:
+    build:
+      context: .
+      args:
+        VITE_API_URL: ""   # empty → relative URLs → nginx proxies /api/* to backend
+    ports:
+      - "80:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  ollama_models:   # LLM weights — persisted across restarts
+  chroma_data:     # ChromaDB vector store — persisted across restarts

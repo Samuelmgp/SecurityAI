@@ -36,3 +36,6 @@ backend/__pycache__/
 backend/**/__pycache__/
 backend/**/*.pyc
 backend/.venv/
+
+# Docker
+.docker/

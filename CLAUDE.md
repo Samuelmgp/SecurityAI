@@ -8,27 +8,36 @@ SecurityAI is a lightweight AI assistant for developing secure networks/applicat
 
 ## Commands
 
-### Frontend
+### Docker (recommended — single command startup)
 ```bash
-npm run dev      # Vite dev server → http://localhost:5173
-npm run build    # TypeScript check + production build → dist/
-npm run lint     # ESLint
+docker compose up --build      # builds images, pulls model (~2.3 GB first run), starts all services
+# Frontend → http://localhost
+# Backend  → http://localhost:8000
+# Ollama   → http://localhost:11434
+
+docker compose down            # stop all services (volumes preserved)
+docker compose down -v         # stop and delete all volumes (wipes model + vector DB)
+
+OLLAMA_MODEL=mistral:7b docker compose up   # override the default model
 ```
 
-### Backend
+### Local development (without Docker)
 ```bash
+# Terminal 1 — frontend
+npm run dev      # Vite dev server → http://localhost:5173
+npm run build    # TypeScript check + production build → dist/
+npm run lint
+
+# Terminal 2 — backend
 cd backend
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env          # edit if needed
-uvicorn main:app --reload     # API server → http://localhost:8000
-```
+cp .env.example .env
+uvicorn main:app --reload     # → http://localhost:8000
 
-### One-time Ollama setup (required)
-```bash
-# Install from https://ollama.com, then:
-ollama serve                    # start the inference server
-ollama pull phi3.5:mini         # ~2.3 GB — default model (change in backend/.env)
+# Terminal 3 — Ollama (install from https://ollama.com)
+ollama serve
+ollama pull phi3.5:mini       # ~2.3 GB, run once
 ```
 
 ## Stack
@@ -38,6 +47,7 @@ ollama pull phi3.5:mini         # ~2.3 GB — default model (change in backend/.
 - **Inference**: Ollama (wraps llama.cpp) — default model `phi3.5:mini`
 - **RAG**: ChromaDB (embedded, persistent) + `BAAI/bge-small-en-v1.5` sentence-transformers embeddings
 - **PDF parsing**: PyMuPDF (fitz)
+- **Orchestration**: Docker Compose — 4 services: `ollama`, `ollama-init`, `backend`, `frontend`
 
 ## Architecture
 
@@ -88,8 +98,21 @@ backend/
 
 The `llm/engine.py` module exposes two functions: `is_available()` and `stream_chat(messages)`. To swap backends (e.g. llama-cpp-python), implement the same interface and update the imports in `api/chat.py`.
 
+## Docker service startup order
+
+```
+ollama (healthcheck: ollama list)
+  └─► ollama-init (pulls model, exits 0)
+        └─► backend (healthcheck: GET /api/health)
+              └─► frontend (nginx, port 80)
+```
+
+`ollama-init` is `restart: "no"` — on subsequent `docker compose up` it is skipped because the model is already in the `ollama_models` volume.
+
+nginx proxies `/api/*` → `backend:8000` with `proxy_buffering off` to support SSE streaming. The frontend is built with `VITE_API_URL=""` so all API calls use relative paths and go through nginx — no hardcoded hosts in the image.
+
 ## Textbook data
 
-`book_data/` is gitignored. PDFs are ingested on backend startup — idempotent, skips already-stored chunks.
+`book_data/` is gitignored. Place PDFs there before starting — the backend ingests them on startup (idempotent, skips already-stored chunks). In Docker, `book_data/` is bind-mounted read-only into the backend container.
 - *Gray Hat Hacking: The Ethical Hacker's Handbook* (2022)
 - *Reversing: Secrets of Reverse Engineering* (2005)
