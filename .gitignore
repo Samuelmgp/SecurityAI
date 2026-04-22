@@ -27,3 +27,12 @@ Thumbs.db
 # Logs
 *.log
 npm-debug.log*
+
+# Backend — generated data (never commit)
+backend/data/
+backend/models/
+backend/.env
+backend/__pycache__/
+backend/**/__pycache__/
+backend/**/*.pyc
+backend/.venv/

@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react'
-import type { Conversation, Message, Category } from '../types'
+import type { Conversation, Message, Category, Source } from '../types'
 
 function generateId(): string {
   return Math.random().toString(36).slice(2, 11)
@@ -53,6 +53,24 @@ export function useConversation() {
     return id
   }, [])
 
+  // Mutate an existing message in-place — used to stream assistant tokens
+  const updateLastAssistantMessage = useCallback(
+    (conversationId: string, messageId: string, content: string, sources: Source[]) => {
+      setConversations(prev =>
+        prev.map(c => {
+          if (c.id !== conversationId) return c
+          return {
+            ...c,
+            messages: c.messages.map(m =>
+              m.id === messageId ? { ...m, content, sources } : m
+            ),
+          }
+        })
+      )
+    },
+    [],
+  )
+
   const deleteConversation = useCallback((id: string) => {
     setConversations(prev => prev.filter(c => c.id !== id))
     setActiveId(prev => (prev === id ? null : prev))
@@ -65,6 +83,7 @@ export function useConversation() {
     setActiveId,
     createConversation,
     appendMessage,
+    updateLastAssistantMessage,
     deleteConversation,
   }
 }
