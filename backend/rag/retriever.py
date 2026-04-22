@@ -18,7 +18,7 @@ class RetrievedChunk:
 def retrieve(query: str, top_k: int | None = None) -> list[RetrievedChunk]:
     k = top_k or settings.top_k_results
     embedder = get_embedder()
-    query_emb = embedder.encode(query, normalize_embeddings=True).tolist()
+    query_emb = next(embedder.embed([query])).tolist()
 
     results: list[RetrievedChunk] = []
 

@@ -9,7 +9,6 @@ from datetime import datetime, timezone
 
 import chromadb
 import chromadb.api
-from sentence_transformers import SentenceTransformer
 
 from rag.ingest import get_embedder, _get_client
 
@@ -38,7 +37,7 @@ def record_outcome(
     success: bool = True,
 ) -> str:
     """Store a test/scenario outcome. Returns the generated outcome ID."""
-    embedder: SentenceTransformer = get_embedder()
+    embedder = get_embedder()
     col = get_outcomes_collection()
 
     # Combine all fields into a single searchable document
@@ -50,7 +49,7 @@ def record_outcome(
     )
 
     oid = hashlib.md5(f"{scenario}{datetime.now(timezone.utc).isoformat()}".encode()).hexdigest()
-    emb = embedder.encode(document, normalize_embeddings=True).tolist()
+    emb = next(embedder.embed([document])).tolist()
 
     col.upsert(
         ids=[oid],

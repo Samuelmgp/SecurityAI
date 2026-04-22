@@ -9,8 +9,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends wget && \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Pre-download the embedding model into the image so startup is instant
-RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('BAAI/bge-small-en-v1.5')"
+# Pre-cache the ONNX embedding model (~50 MB) so container startup is instant
+RUN python -c "from fastembed import TextEmbedding; list(TextEmbedding('BAAI/bge-small-en-v1.5').embed(['warmup']))"
 
 COPY . .
 

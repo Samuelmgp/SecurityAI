@@ -9,7 +9,8 @@ python-dotenv>=1.0.0
 PyMuPDF>=1.24.0
 
 # Embeddings + vector store
-sentence-transformers>=3.3.0
+# fastembed uses ONNX Runtime instead of PyTorch — ~50 MB vs ~2 GB
+fastembed>=0.4.0
 chromadb>=0.6.0
 
 # HTTP client (Ollama API)

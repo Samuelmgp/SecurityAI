@@ -6,7 +6,7 @@ from pathlib import Path
 import fitz  # PyMuPDF
 import chromadb
 import chromadb.api
-from sentence_transformers import SentenceTransformer
+from fastembed import TextEmbedding
 
 from config import settings
 from rag.chunker import split_text
@@ -18,7 +18,7 @@ EMBED_MODEL = "BAAI/bge-small-en-v1.5"
 
 _client: chromadb.api.ClientAPI | None = None
 _collection: chromadb.Collection | None = None
-_embedder: SentenceTransformer | None = None
+_embedder: TextEmbedding | None = None
 
 
 def _get_client() -> chromadb.api.ClientAPI:
@@ -39,11 +39,11 @@ def get_collection() -> chromadb.Collection:
     return _collection
 
 
-def get_embedder() -> SentenceTransformer:
+def get_embedder() -> TextEmbedding:
     global _embedder
     if _embedder is None:
         logger.info("Loading embedding model %s …", EMBED_MODEL)
-        _embedder = SentenceTransformer(EMBED_MODEL)
+        _embedder = TextEmbedding(EMBED_MODEL)
     return _embedder
 
 
@@ -73,19 +73,23 @@ def ingest_pdf(path: Path) -> int:
     logger.info("Ingesting %s …", short_title)
     doc = fitz.open(str(path))
 
-    ids, embeddings, documents, metadatas = [], [], [], []
+    # Collect all new chunks first, then batch-embed for efficiency
+    pending_ids, pending_texts, pending_meta = [], [], []
     batch_size = 64
 
-    def flush() -> None:
-        if not ids:
+    def flush(texts: list[str]) -> None:
+        if not texts:
             return
+        vecs = list(embedder.embed(texts))
         collection.upsert(
-            ids=ids,
-            embeddings=embeddings,
-            documents=documents,
-            metadatas=metadatas,
+            ids=pending_ids[:],
+            embeddings=[v.tolist() for v in vecs],
+            documents=texts,
+            metadatas=pending_meta[:],
         )
-        ids.clear(); embeddings.clear(); documents.clear(); metadatas.clear()
+        pending_ids.clear()
+        pending_texts.clear()
+        pending_meta.clear()
 
     new_chunks = 0
     for page_num, page in enumerate(doc, start=1):
@@ -93,28 +97,20 @@ def ingest_pdf(path: Path) -> int:
         if not text.strip():
             continue
 
-        chunks = split_text(text, settings.chunk_size, settings.chunk_overlap)
-        for idx, chunk in enumerate(chunks):
+        for idx, chunk in enumerate(split_text(text, settings.chunk_size, settings.chunk_overlap)):
             cid = _chunk_id(full_name, page_num, idx)
-            existing = collection.get(ids=[cid])
-            if existing["ids"]:
+            if collection.get(ids=[cid])["ids"]:
                 continue  # already ingested
 
-            emb = embedder.encode(chunk.text, normalize_embeddings=True).tolist()
-            ids.append(cid)
-            embeddings.append(emb)
-            documents.append(chunk.text)
-            metadatas.append({
-                "book": short_title,
-                "page": page_num,
-                "source": full_name,
-            })
+            pending_ids.append(cid)
+            pending_texts.append(chunk.text)
+            pending_meta.append({"book": short_title, "page": page_num, "source": full_name})
             new_chunks += 1
 
-            if len(ids) >= batch_size:
-                flush()
+            if len(pending_ids) >= batch_size:
+                flush(pending_texts[:])
 
-    flush()
+    flush(pending_texts[:])
     doc.close()
     logger.info("  → %d new chunks from %s", new_chunks, short_title)
     return new_chunks
