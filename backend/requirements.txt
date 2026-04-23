@@ -15,3 +15,7 @@ chromadb>=0.6.0
 
 # HTTP client (Ollama API)
 httpx>=0.28.0
+
+# Data generation pipeline
+anthropic>=0.50.0
+tqdm>=4.67.0
