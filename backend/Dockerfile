@@ -2,10 +2,6 @@ FROM python:3.13-slim
 
 WORKDIR /app
 
-# Install wget for healthchecks; MuPDF bundled in PyMuPDF wheel (no system dep needed)
-RUN apt-get update && apt-get install -y --no-install-recommends wget && \
-    rm -rf /var/lib/apt/lists/*
-
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
@@ -19,8 +15,5 @@ ENV PYTHONUNBUFFERED=1 \
     CHROMA_DIR=/app/data/chroma
 
 EXPOSE 8000
-
-HEALTHCHECK --interval=10s --timeout=5s --retries=6 --start-period=20s \
-    CMD wget -qO- http://localhost:8000/api/health || exit 1
 
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

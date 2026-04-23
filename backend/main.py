@@ -15,8 +15,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Single-worker executor keeps ingestion off the event loop without
-# spawning multiple competing threads during startup.
 _ingest_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ingest")
 
 
@@ -37,13 +35,17 @@ async def _run_ingest() -> None:
         logger.exception("Textbook ingestion failed — RAG will work with existing data only")
 
 
+async def _run_warmup() -> None:
+    from llm.engine import warmup_model
+    logger.info("Warming up model '%s' …", settings.ollama_model)
+    await warmup_model()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting SecurityAI backend …")
-    # Fire ingestion in the background so uvicorn starts accepting requests
-    # (including healthchecks) immediately — ingestion can take several minutes
-    # on first run for large PDFs.
     asyncio.create_task(_run_ingest())
+    asyncio.create_task(_run_warmup())
     yield
     logger.info("Shutting down …")
     _ingest_executor.shutdown(wait=False)
@@ -56,8 +58,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-from api.chat import router as chat_router      # noqa: E402
-from api.health import router as health_router   # noqa: E402
+from api.chat import router as chat_router          # noqa: E402
+from api.health import router as health_router      # noqa: E402
 from api.outcomes import router as outcomes_router  # noqa: E402
 
 app.add_middleware(

@@ -5,11 +5,13 @@ import { useConversation } from './hooks/useConversation'
 import type { Category, Source } from './types'
 
 const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
+const REQUEST_TIMEOUT_MS = 60_000
 
 export default function App() {
   const [selectedCategory, setSelectedCategory] = useState<Category>('general')
   const [isLoading, setIsLoading] = useState(false)
   const activeConvIdRef = useRef<string | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
 
   const {
     conversations,
@@ -23,20 +25,24 @@ export default function App() {
   } = useConversation()
 
   const handleSend = useCallback(async (content: string) => {
+    // Cancel any in-flight request before starting a new one
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+
     let convId = activeId ?? activeConvIdRef.current
     if (!convId) {
       convId = createConversation(selectedCategory)
       activeConvIdRef.current = convId
     }
 
-    // Build history from current conversation (exclude empty assistant placeholder)
     const history = (activeConversation?.messages ?? []).map(m => ({
       role: m.role,
       content: m.content,
     }))
 
     appendMessage(convId, { role: 'user', content })
-    // Reserve an assistant message slot we'll stream into
     const assistantMsgId = appendMessage(convId, { role: 'assistant', content: '' })
     setIsLoading(true)
 
@@ -45,6 +51,7 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query: content, history, category: selectedCategory }),
+        signal: controller.signal,
       })
 
       if (!response.ok || !response.body) {
@@ -61,9 +68,7 @@ export default function App() {
         if (done) break
 
         const text = decoder.decode(value, { stream: true })
-        const lines = text.split('\n')
-
-        for (const line of lines) {
+        for (const line of text.split('\n')) {
           if (!line.startsWith('data: ')) continue
           try {
             const payload = JSON.parse(line.slice(6))
@@ -93,19 +98,19 @@ export default function App() {
         }
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown error'
-      updateLastAssistantMessage(
-        convId,
-        assistantMsgId,
-        `_Failed to reach the backend: ${msg}. Make sure the backend is running._`,
-        [],
-      )
+      const isTimeout = err instanceof DOMException && err.name === 'AbortError'
+      const msg = isTimeout
+        ? '_Request timed out after 60 seconds. The model may still be warming up — please try again in a moment._'
+        : `_Could not reach the backend: ${err instanceof Error ? err.message : 'Unknown error'}. Make sure the backend is running._`
+      updateLastAssistantMessage(convId, assistantMsgId, msg, [])
     } finally {
+      clearTimeout(timeoutId)
       setIsLoading(false)
     }
   }, [activeId, activeConversation, selectedCategory, createConversation, appendMessage, updateLastAssistantMessage])
 
   const handleNew = useCallback((category: Category = selectedCategory) => {
+    abortRef.current?.abort()
     const id = createConversation(category)
     activeConvIdRef.current = id
   }, [selectedCategory, createConversation])
