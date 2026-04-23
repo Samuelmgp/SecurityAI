@@ -26,7 +26,23 @@ services:
   # ── One-shot: pull the model on first run (skipped on subsequent starts) ─
   ollama-init:
     image: ollama/ollama:latest
-    entrypoint: ["ollama", "pull", "${OLLAMA_MODEL:-phi3.5:mini}"]
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        MODEL=$${OLLAMA_MODEL:-phi3:mini}
+        echo "Pulling model: $$MODEL"
+        n=0
+        until ollama pull "$$MODEL"; do
+          n=$$((n+1))
+          if [ $$n -ge 5 ]; then
+            echo "ERROR: failed to pull $$MODEL after 5 attempts"
+            exit 1
+          fi
+          echo "Attempt $$n failed — retrying in 5s..."
+          sleep 5
+        done
+        echo "Model $$MODEL ready."
     environment:
       OLLAMA_HOST: http://ollama:11434
     depends_on:
@@ -45,7 +61,7 @@ services:
       - chroma_data:/app/data/chroma    # persistent vector DB
     environment:
       OLLAMA_BASE_URL: http://ollama:11434
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-phi3.5:mini}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-phi3:mini}
       BOOKS_DIR: /app/book_data
       CHROMA_DIR: /app/data/chroma
       FRONTEND_ORIGIN: http://localhost

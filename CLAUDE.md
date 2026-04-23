@@ -37,14 +37,14 @@ uvicorn main:app --reload     # → http://localhost:8000
 
 # Terminal 3 — Ollama (install from https://ollama.com)
 ollama serve
-ollama pull phi3.5:mini       # ~2.3 GB, run once
+ollama pull phi3:mini       # ~2.3 GB, run once
 ```
 
 ## Stack
 
 - **Frontend**: React 19 + TypeScript + Tailwind CSS v4 + Vite 6 + lucide-react
 - **Backend**: FastAPI + uvicorn (Python 3.11+)
-- **Inference**: Ollama (wraps llama.cpp) — default model `phi3.5:mini`
+- **Inference**: Ollama (wraps llama.cpp) — default model `phi3:mini`
 - **RAG**: ChromaDB (embedded, persistent) + `BAAI/bge-small-en-v1.5` sentence-transformers embeddings
 - **PDF parsing**: PyMuPDF (fitz)
 - **Orchestration**: Docker Compose — 4 services: `ollama`, `ollama-init`, `backend`, `frontend`
