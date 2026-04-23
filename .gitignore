@@ -39,3 +39,9 @@ backend/.venv/
 
 # Docker
 .docker/
+
+# Colab / fine-tuning artifacts (GGUF files are large — store outside repo)
+notebooks/*-checkpoints/
+*.gguf
+*.bin
+Modelfile
